@@ -558,9 +558,6 @@ void tuned_STREAM_Copy()
 {
 	ssize_t j;
 	__m128d x;
-//#pragma omp parallel for
-//        for (j=0; j<STREAM_ARRAY_SIZE; j++)
-//            c[j] = a[j];
 #pragma omp parallel for private(x)
     for (j=0; j<STREAM_ARRAY_SIZE; j+=2) {
         x = _mm_load_pd(a+j);

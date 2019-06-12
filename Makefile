@@ -1,10 +1,11 @@
 CC = gcc
-CFLAGS = -Ofast -fopenmp -DSTREAM_ARRAY_SIZE=100000000 -DNTIMES=10 -DOFFSET=0 -DTUNED
+CFLAGS = -Ofast -ffreestanding -fopenmp -DSTREAM_ARRAY_SIZE=100000000 -DNTIMES=10 -DOFFSET=0
 
 all: stream.exe
 
 stream.exe: stream.c
 	$(CC) $(CFLAGS) stream.c -o stream
+	$(CC) $(CFLAGS) -DTUNED stream.c -o stream.tuned
 
 clean:
 	rm -f stream_c.exe *.o
