@@ -42,6 +42,7 @@
 /*-----------------------------------------------------------------------*/
 # include <stdio.h>
 # include <stdlib.h>
+# include <string.h>
 # include <unistd.h>
 # include <math.h>
 # include <float.h>
@@ -472,19 +473,13 @@ checktick()
 
 
 
-/* A gettimeofday routine to give access to the wall
-   clock timer on most UNIX-like systems.  */
-
-#include <sys/time.h>
+#include <time.h>
 
 double mysecond()
 {
-        struct timeval tp;
-        struct timezone tzp;
-        int i;
-
-        i = gettimeofday(&tp,&tzp);
-        return ( (double) tp.tv_sec + (double) tp.tv_usec * 1.e-6 );
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    return (double) ts.tv_sec + (double) ts.tv_nsec * 1e-9;
 }
 
 #ifndef abs
