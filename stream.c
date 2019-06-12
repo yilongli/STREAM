@@ -191,18 +191,24 @@ static STREAM_TYPE	a[STREAM_ARRAY_SIZE+OFFSET],
 			c[STREAM_ARRAY_SIZE+OFFSET];
 #endif
 
-static double	avgtime[4] = {0}, maxtime[4] = {0},
-		mintime[4] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX};
+#define NUM_TESTS 5
 
-static char	*label[4] = {"Copy:      ", "Scale:     ",
-    "Add:       ", "Triad:     "};
+static double	avgtime[NUM_TESTS] = {0}, maxtime[NUM_TESTS] = {0},
+		mintime[NUM_TESTS] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX};
 
-static double	bytes[4] = {
+static char	*label[NUM_TESTS] = {
+    "Copy:      ",
+    "Scale:     ",
+    "Add:       ",
+    "Triad:     ",
+    "Read:      "};
+
+static double	bytes[NUM_TESTS] = {
     2 * sizeof(STREAM_TYPE) * STREAM_ARRAY_SIZE,
     2 * sizeof(STREAM_TYPE) * STREAM_ARRAY_SIZE,
     3 * sizeof(STREAM_TYPE) * STREAM_ARRAY_SIZE,
-    3 * sizeof(STREAM_TYPE) * STREAM_ARRAY_SIZE
-    };
+    3 * sizeof(STREAM_TYPE) * STREAM_ARRAY_SIZE,
+    1 * sizeof(STREAM_TYPE) * STREAM_ARRAY_SIZE};
 
 extern double mysecond();
 extern void checkSTREAMresults();
@@ -214,6 +220,7 @@ extern void tuned_STREAM_Triad(STREAM_TYPE scalar);
 #endif
 #ifdef _OPENMP
 extern int omp_get_num_threads();
+extern int omp_get_thread_num();
 #endif
 int
 main()
@@ -223,7 +230,7 @@ main()
     int			k;
     ssize_t		j;
     STREAM_TYPE		scalar;
-    double		t, times[4][NTIMES];
+    double		t, times[NUM_TESTS][NTIMES];
 
 #ifdef HUGEPAGE
     ssize_t array_size = sizeof(STREAM_TYPE) * (STREAM_ARRAY_SIZE + OFFSET);
@@ -370,13 +377,32 @@ main()
 	    a[j] = b[j]+scalar*c[j];
 #endif
 	times[3][k] = mysecond() - times[3][k];
+
+	times[4][k] = mysecond();
+	char sum[100] = {0};
+	if (omp_get_num_threads() > 100) {
+	    printf("# OpenMP threads must be <= 100!\n")
+	    exit(1);
+	}
+#pragma omp parallel for shared(sum)
+    for (char* p = (char*)a; p < (char*)(a + STREAM_ARRAY_SIZE); p += 64) {
+        __builtin_prefetch(p + 64 * 8, 0, 3);
+        sum[omp_get_thread_num()] += *p;
+    }
+    int ss = 0;
+    for (j=0; j<omp_get_num_threads(); j++)
+        ss += sum[j];
+    if (ss == 1234567) {
+        printf("sum = %d\n", ss);
+    }
+	times[4][k] = mysecond() - times[4][k];
 	}
 
     /*	--- SUMMARY --- */
 
     for (k=1; k<NTIMES; k++) /* note -- skip first iteration */
 	{
-	for (j=0; j<4; j++)
+	for (j=0; j<NUM_TESTS; j++)
 	    {
 	    avgtime[j] = avgtime[j] + times[j][k];
 	    mintime[j] = MIN(mintime[j], times[j][k]);
@@ -385,7 +411,7 @@ main()
 	}
 
     printf("Function    Best Rate MB/s  Avg time     Min time     Max time\n");
-    for (j=0; j<4; j++) {
+    for (j=0; j<NUM_TESTS; j++) {
 		avgtime[j] = avgtime[j]/(double)(NTIMES-1);
 
 		printf("%s%12.1f  %11.6f  %11.6f  %11.6f\n", label[j],
