@@ -212,6 +212,7 @@ static double	bytes[NUM_TESTS] = {
 
 extern double mysecond();
 extern void checkSTREAMresults();
+extern void flush_llc();
 #ifdef TUNED
 extern void tuned_STREAM_Copy();
 extern void tuned_STREAM_Scale(STREAM_TYPE scalar);
@@ -378,16 +379,19 @@ main()
 #endif
 	times[3][k] = mysecond() - times[3][k];
 
+    flush_llc();
 	times[4][k] = mysecond();
 	char sum[100] = {0};
 	if (omp_get_num_threads() > 100) {
-	    printf("# OpenMP threads must be <= 100!\n")
-	    exit(1);
+	    printf("# OpenMP threads must be <= 100!\n");
+	    return 1;
 	}
 #pragma omp parallel for shared(sum)
     for (char* p = (char*)a; p < (char*)(a + STREAM_ARRAY_SIZE); p += 64) {
-        __builtin_prefetch(p + 64 * 8, 0, 3);
-        sum[omp_get_thread_num()] += *p;
+//        __builtin_prefetch(p + 64 * 8, 0, 3);
+//        sum[omp_get_thread_num()] += *p;
+        char data = *p;
+        asm volatile("" : "+r" (data));
     }
     int ss = 0;
     for (j=0; j<omp_get_num_threads(); j++)
@@ -601,6 +605,18 @@ void checkSTREAMresults ()
 	printf ("    Observed a(1), b(1), c(1): %f %f %f \n",a[1],b[1],c[1]);
 	printf ("    Rel Errors on a, b, c:     %e %e %e \n",abs(aAvgErr/aj),abs(bAvgErr/bj),abs(cAvgErr/cj));
 #endif
+}
+
+/**
+ * Flush the last level cache by dynamically allocating and initializing
+ * a chunk of memory (much) larger than the size of LLC.
+ */
+void flush_llc()
+{
+#define LAST_LEVEL_CACHE_SIZE (55 * 1000000)
+    char* p = malloc(LAST_LEVEL_CACHE_SIZE * 2);
+    memset(p, 1, LAST_LEVEL_CACHE_SIZE * 2);
+    free(p);
 }
 
 #ifdef TUNED
