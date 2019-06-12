@@ -1,14 +1,19 @@
 CC = gcc
-CFLAGS = -Ofast -ffreestanding -fopenmp -DSTREAM_ARRAY_SIZE=100000000 -DNTIMES=10 -DOFFSET=0
+CFLAGS = -g -Ofast -march=native -ffreestanding -fopenmp -DSTREAM_ARRAY_SIZE=100000000 -DNTIMES=20 -DOFFSET=0
 
-all: stream.exe
+all: stream stream.nt stream.hugepage
 
-stream.exe: stream.c
+stream: stream.c
 	$(CC) $(CFLAGS) stream.c -o stream
-	$(CC) $(CFLAGS) -DTUNED stream.c -o stream.tuned
+
+stream.nt: stream.c
+	$(CC) $(CFLAGS) -DTUNED stream.c -o stream.nt
+
+stream.hugepage: stream.c
+	$(CC) $(CFLAGS) -DTUNED -DHUGEPAGE stream.c -o stream.hugepage
 
 clean:
-	rm -f stream_c.exe *.o
+	rm -f stream stream.nt stream.hugepage *.o
 
 # an example of a more complex build line for the Intel icc compiler
 stream.icc: stream.c

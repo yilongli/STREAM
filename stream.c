@@ -46,9 +46,12 @@
 # include <float.h>
 # include <limits.h>
 # include <sys/time.h>
+# include <sys/mman.h>
+# include <fcntl.h>
 
 #ifdef TUNED
 #include <emmintrin.h>
+#include <immintrin.h>
 #endif
 
 /*-----------------------------------------------------------------------
@@ -180,9 +183,13 @@
 #define STREAM_TYPE double
 #endif
 
+#ifdef HUGEPAGE
+static STREAM_TYPE *a, *b, *c;
+#else
 static STREAM_TYPE	a[STREAM_ARRAY_SIZE+OFFSET],
 			b[STREAM_ARRAY_SIZE+OFFSET],
 			c[STREAM_ARRAY_SIZE+OFFSET];
+#endif
 
 static double	avgtime[4] = {0}, maxtime[4] = {0},
 		mintime[4] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX};
@@ -217,6 +224,20 @@ main()
     ssize_t		j;
     STREAM_TYPE		scalar;
     double		t, times[4][NTIMES];
+
+#ifdef HUGEPAGE
+    ssize_t array_size = sizeof(STREAM_TYPE) * (STREAM_ARRAY_SIZE + OFFSET);
+    ssize_t length = array_size * 3 + 1024;
+    int flags = MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB;
+    void* addr = mmap(NULL, length, PROT_READ | PROT_WRITE, flags, -1, 0);
+    if (addr == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
+    }
+    a = addr;
+    b = a + (STREAM_ARRAY_SIZE + OFFSET);
+    c = b + (STREAM_ARRAY_SIZE + OFFSET);
+#endif
 
     /* --- SETUP --- determine precision and check timing --- */
 
@@ -378,6 +399,10 @@ main()
     /* --- Check Results --- */
     checkSTREAMresults();
     printf(HLINE);
+
+#ifdef HUGEPAGE
+	munmap(addr, length);
+#endif
 
     return 0;
 }
@@ -557,36 +582,54 @@ void checkSTREAMresults ()
 void tuned_STREAM_Copy()
 {
 	ssize_t j;
-	__m128d x;
-#pragma omp parallel for private(x)
-    for (j=0; j<STREAM_ARRAY_SIZE; j+=2) {
-        x = _mm_load_pd(a+j);
+#pragma omp parallel for
+    for (j=0; j<STREAM_ARRAY_SIZE; j+=4) {
+#if STREAM_TYPE == double
+        __m256d x = _mm256_load_pd(a+j);
+        _mm256_stream_pd(c+j, x);
+#else
+        __m128d x = _mm_load_pd(a+j);
         _mm_stream_pd(c+j, x);
+#endif
     }
 }
 
 void tuned_STREAM_Scale(STREAM_TYPE scalar)
 {
 	ssize_t j;
+	__m128d s = _mm_load_pd1(&scalar);
 #pragma omp parallel for
-	for (j=0; j<STREAM_ARRAY_SIZE; j++)
-	    b[j] = scalar*c[j];
+    for (j=0; j<STREAM_ARRAY_SIZE; j+=2) {
+        __m128d x = _mm_load_pd(c+j);
+        x = _mm_mul_pd(s, x);
+        _mm_stream_pd(b+j, x);
+    }
 }
 
 void tuned_STREAM_Add()
 {
 	ssize_t j;
 #pragma omp parallel for
-	for (j=0; j<STREAM_ARRAY_SIZE; j++)
-	    c[j] = a[j]+b[j];
+    for (j=0; j<STREAM_ARRAY_SIZE; j+=2) {
+        __m128d x = _mm_load_pd(a+j);
+        __m128d y = _mm_load_pd(b+j);
+        __m128d z = _mm_add_pd(x, y);
+        _mm_stream_pd(c+j, z);
+    }
 }
 
 void tuned_STREAM_Triad(STREAM_TYPE scalar)
 {
 	ssize_t j;
+	__m128d s = _mm_load_pd1(&scalar);
 #pragma omp parallel for
-	for (j=0; j<STREAM_ARRAY_SIZE; j++)
-	    a[j] = b[j]+scalar*c[j];
+    for (j=0; j<STREAM_ARRAY_SIZE; j+=2) {
+        __m128d x = _mm_load_pd(b+j);
+        __m128d y = _mm_load_pd(c+j);
+        __m128d z = _mm_mul_pd(s, y);
+        z = _mm_add_pd(x, z);
+        _mm_stream_pd(a+j, z);
+    }
 }
 /* end of stubs for the "tuned" versions of the kernels */
 #endif
